@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Decentralized Ride-Sharing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+        input, button {
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #status {
+            color: green;
+            margin-top: 10px;
+        }
+        #error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Decentralized Ride-Sharing</h1>
+        
+        <!-- Wallet Connection -->
+        <div id="wallet-connection" class="section">
+            <h2>Wallet Connection</h2>
+            <button onclick="connectWallet()">Connect Wallet</button>
+            <div id="account-info"></div>
+        </div>
+
+        <!-- Offer Ride Section -->
+        <div id="offer-ride" class="section">
+            <h2>Offer a Ride</h2>
+            <input type="text" id="start-location" placeholder="Start Location">
+            <input type="text" id="end-location" placeholder="End Location">
+            <input type="number" id="ride-price" placeholder="Price (Wei)">
+            <button onclick="offerRide()">Offer Ride</button>
+        </div>
+
+        <!-- Available Rides Section -->
+        <div id="available-rides" class="section">
+            <h2>Available Rides</h2>
+            <button onclick="fetchAvailableRides()">Refresh Rides</button>
+            <div id="rides-list"></div>
+        </div>
+
+        <!-- Book Ride Section -->
+        <div id="book-ride" class="section">
+            <h2>Book a Ride</h2>
+            <input type="number" id="ride-id-to-book" placeholder="Ride ID">
+            <button onclick="bookRide()">Book Ride</button>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="status"></div>
+        <div id="error"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
+    <script>
+        // Contract ABI and Address (replace with your actual deployed contract details)
+        const contractABI = [
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "rideId",
+				"type": "uint256"
+			}
+		],
+		"name": "bookRide",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "rideId",
+				"type": "uint256"
+			}
+		],
+		"name": "completeRide",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "price",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "startLocation",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "endLocation",
+				"type": "string"
+			}
+		],
+		"name": "offerRide",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "rideId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "passenger",
+				"type": "address"
+			}
+		],
+		"name": "RideBooked",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "rideId",
+				"type": "uint256"
+			}
+		],
+		"name": "RideCompleted",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "rideId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "driver",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "price",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "startLocation",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "endLocation",
+				"type": "string"
+			}
+		],
+		"name": "RideOffered",
+		"type": "event"
+	},
+	{
+		"stateMutability": "payable",
+		"type": "receive"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "rideId",
+				"type": "uint256"
+			}
+		],
+		"name": "getRideDetails",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "driver",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "price",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "startLocation",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "endLocation",
+				"type": "string"
+			},
+			{
+				"internalType": "bool",
+				"name": "isAvailable",
+				"type": "bool"
+			},
+			{
+				"internalType": "address",
+				"name": "passenger",
+				"type": "address"
+			},
+			{
+				"internalType": "bool",
+				"name": "isCompleted",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "rideCounter",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "rides",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "driver",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "price",
+				"type": "uint256"
+			},
+			{
+				"internalType": "string",
+				"name": "startLocation",
+				"type": "string"
+			},
+			{
+				"internalType": "string",
+				"name": "endLocation",
+				"type": "string"
+			},
+			{
+				"internalType": "bool",
+				"name": "isAvailable",
+				"type": "bool"
+			},
+			{
+				"internalType": "address",
+				"name": "passenger",
+				"type": "address"
+			},
+			{
+				"internalType": "bool",
+				"name": "isCompleted",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
+        const contractAddress = '0x64a655f3480a14704b4F6745D03384B9697bC9F2'; // Replace with actual deployed contract address
+        
+
+        let web3;
+        let contract;
+        let userAccount;
+
+        async function connectWallet() {
+            // Check if MetaMask is installed
+            if (typeof window.ethereum !== 'undefined') {
+                try {
+                    // Request account access
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    userAccount = accounts[0];
+                    
+                    // Initialize Web3
+                    web3 = new Web3(window.ethereum);
+                    contract = new web3.eth.Contract(contractABI, contractAddress);
+
+                    // Update account info
+                    document.getElementById('account-info').innerHTML = 
+                        `Connected Account: ${userAccount}`;
+                    
+                    document.getElementById('status').innerHTML = 
+                        'Wallet successfully connected!';
+                } catch (error) {
+                    document.getElementById('error').innerHTML = 
+                        `Connection failed: ${error.message}`;
+                }
+            } else {
+                document.getElementById('error').innerHTML = 
+                    'Please install MetaMask!';
+            }
+        }
+
+        async function offerRide() {
+            if (!userAccount) {
+                document.getElementById('error').innerHTML = 
+                    'Please connect wallet first!';
+                return;
+            }
+
+            const startLocation = document.getElementById('start-location').value;
+            const endLocation = document.getElementById('end-location').value;
+            const price = document.getElementById('ride-price').value;
+
+            try {
+                await contract.methods.offerRide(price, startLocation, endLocation)
+                    .send({ from: userAccount });
+                
+                document.getElementById('status').innerHTML = 
+                    'Ride offered successfully!';
+                fetchAvailableRides();
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Offer ride failed: ${error.message}`;
+            }
+        }
+
+        async function fetchAvailableRides() {
+            if (!contract) {
+                document.getElementById('error').innerHTML = 
+                    'Please connect wallet first!';
+                return;
+            }
+
+            const ridesList = document.getElementById('rides-list');
+            ridesList.innerHTML = 'Loading rides...';
+
+            try {
+                const rideCounter = await contract.methods.rideCounter().call();
+                let availableRidesHTML = '<ul>';
+
+                for (let i = 1; i <= rideCounter; i++) {
+                    const ride = await contract.methods.getRideDetails(i).call();
+                    
+                    if (ride.isAvailable) {
+                        availableRidesHTML += `
+                            <li>
+                                Ride ID: ${i} | 
+                                From: ${ride.startLocation} | 
+                                To: ${ride.endLocation} | 
+                                Price: ${web3.utils.fromWei(ride.price, 'ether')} ETH
+                            </li>
+                        `;
+                    }
+                }
+
+                availableRidesHTML += '</ul>';
+                ridesList.innerHTML = availableRidesHTML;
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Failed to fetch rides: ${error.message}`;
+            }
+        }
+
+        async function bookRide() {
+            if (!userAccount) {
+                document.getElementById('error').innerHTML = 
+                    'Please connect wallet first!';
+                return;
+            }
+
+            const rideId = document.getElementById('ride-id-to-book').value;
+
+            try {
+                // First, get ride details to check the price
+                const ride = await contract.methods.getRideDetails(rideId).call();
+                
+                // Book the ride and send the required payment
+                await contract.methods.bookRide(rideId)
+                    .send({ 
+                        from: userAccount, 
+                        value: ride.price 
+                    });
+                
+                document.getElementById('status').innerHTML = 
+                    'Ride booked successfully!';
+                fetchAvailableRides();
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Book ride failed: ${error.message}`;
+            }
+        }
+
+        // Listen for network changes
+        if (typeof window.ethereum !== 'undefined') {
+            window.ethereum.on('chainChanged', () => {
+                window.location.reload();
+            });
+
+            window.ethereum.on('accountsChanged', (accounts) => {
+                if (accounts.length > 0) {
+                    userAccount = accounts[0];
+                    document.getElementById('account-info').innerHTML = 
+                        `Connected Account: ${userAccount}`;
+                } else {
+                    document.getElementById('account-info').innerHTML = '';
+                }
+            });
+        }
+    </script>
+</body>
+
